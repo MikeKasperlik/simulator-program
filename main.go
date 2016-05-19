@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	//"sync"
+	"sync"
 	"time"
 
-	//"github.com/kidoman/embd"
+	"github.com/kidoman/embd"
 	_ "github.com/kidoman/embd/host/rpi"
 
 	"github.com/carloop/simulator/mcp2515"
@@ -18,54 +18,54 @@ import (
 func main() {
 	flag.Parse()
 
-	// err := embd.InitSPI()
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer embd.CloseSPI()
+	err := embd.InitSPI()
+	if err != nil {
+		panic(err)
+	}
+	defer embd.CloseSPI()
 
-	// const (
-	// 	device  = 0
-	// 	speed   = 1e5
-	// 	bpw     = 8
-	// 	delay   = 0
-	// 	channel = 0
-	// )
+	const (
+		device  = 0
+		speed   = 1e5
+		bpw     = 8
+		delay   = 0
+		channel = 0
+	)
 
-	// spi := embd.NewSPIBus(embd.SPIMode0, device, int(speed), bpw, delay)
-	// defer spi.Close()
+	spi := embd.NewSPIBus(embd.SPIMode0, device, int(speed), bpw, delay)
+	defer spi.Close()
 
-	// canDevice := mcp2515.New(spi)
-	// err = canDevice.Setup(500000)
+	canDevice := mcp2515.New(spi)
+	err = canDevice.Setup(500000)
 
-	// if err != nil {
-	// 	printError(err)
-	// 	return
-	// }
+	if err != nil {
+		printError(err)
+		return
+	}
 
-	//rxChan := make(mcp2515.MsgChan, 10)
+	rxChan := make(mcp2515.MsgChan, 10)
 	txChan := make(mcp2515.MsgChan, 10)
-	//errChan := make(mcp2515.ErrChan, 10)
+	errChan := make(mcp2515.ErrChan, 10)
 	dataChan := make(reportServer.DataChan, 1)
 
 	server := reportServer.New(dataChan)
 
-	// var wg sync.WaitGroup
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	mcp2515.RunMessageLoop(canDevice, rxChan, txChan, errChan)
-	// }()
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	printCanMessages(rxChan, txChan, errChan)
-	// }()
-	// wg.Add(1)
-	// go func() {
-	// 	defer wg.Done()
-	// 	sendMessages(txChan)
-	// }()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		mcp2515.RunMessageLoop(canDevice, rxChan, txChan, errChan)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		printCanMessages(rxChan, txChan, errChan)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sendMessages(txChan)
+	}()
 
 	go func() {
 		forwardDataToCAN(dataChan, txChan)
@@ -73,12 +73,12 @@ func main() {
 
 	// Don't wait on this gorouting, just close the server when exiting
 	// the program
-	//go func() {
-	server.Start()
-	//}()
+	go func() {
+		server.Start()
+	}()
 
 	// Wait for all goroutines to be done
-	// wg.Wait()
+	wg.Wait()
 }
 
 func printCanMessages(rxChan mcp2515.MsgChan, txChan mcp2515.MsgChan,
@@ -123,15 +123,16 @@ func sendMessages(txChan mcp2515.MsgChan) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
-	i := uint8(0)
 	for {
 		var message mcp2515.Message
-		message.Id = 0x2AA
+		// PID reply for RPM
+		message.Id = 0x7E8
 		message.Length = 8
-		for j := 0; j < 8; j++ {
-			message.Data[j] = 0xAA
-		}
-		i += 1
+		message.Data[0] = 4
+		message.Data[1] = 1
+		message.Data[2] = 0x0C
+		message.Data[3] = 0
+		message.Data[4] = 0
 
 		select {
 		case txChan <- &message:

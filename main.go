@@ -61,11 +61,11 @@ func main() {
 		defer wg.Done()
 		printCanMessages(rxChan, txChan, errChan)
 	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		sendMessages(txChan)
-	}()
+	//wg.Add(1)
+	//go func() {
+	//	defer wg.Done()
+	//	sendMessages(txChan)
+	//}()
 
 	go func() {
 		forwardDataToCAN(dataChan, txChan)
@@ -152,8 +152,12 @@ func sendMessages(txChan mcp2515.MsgChan) {
 func forwardDataToCAN(incomingData reportServer.DataChan, txChan mcp2515.MsgChan) {
 	for {
 		data := <-incomingData
+	    // fmt.Println("Forwarding data ", data.Speed)
 		message := dataToCAN(data)
-		txChan <- message
+		select {
+		case txChan <- message: // message added to queue
+		default: // channel full --> ignore
+		}
 	}
 }
 
